@@ -1,6 +1,7 @@
 'use strict';
 
 const crypto = require('node:crypto');
+const fs = require('node:fs');
 const path = require('node:path');
 const express = require('express');
 const nodemailer = require('nodemailer');
@@ -248,11 +249,20 @@ function createApp() {
     res.json(publicJob(job));
   });
 
-  // no-cache: the Cloudflare edge in front kept serving an old app.js after a deploy
-  app.use(express.static(path.join(__dirname, 'public'), {
-    index: 'index.html',
-    setHeaders: (res) => res.setHeader('Cache-Control', 'no-cache'),
-  }));
+  // Cloudflare in front caches .js/.css (and its zone browser TTL overrides our headers), so the
+  // page links each asset as file?v=<content hash>: a deploy changes the URL. The page itself is no-store.
+  const PUBLIC = path.join(__dirname, 'public');
+  const indexHtml = fs.readFileSync(path.join(PUBLIC, 'index.html'), 'utf8').replace(
+    /(src|href)="((?:vendor\/)?[\w.-]+\.(?:js|css))"/g,
+    (m, attr, file) => {
+      const hash = crypto.createHash('sha256').update(fs.readFileSync(path.join(PUBLIC, file))).digest('hex').slice(0, 12);
+      return `${attr}="${file}?v=${hash}"`;
+    },
+  );
+  app.get(['/', '/index.html'], (req, res) => {
+    res.set('Cache-Control', 'no-store').type('html').send(indexHtml);
+  });
+  app.use(express.static(PUBLIC, { index: false }));
 
   app.use('/api', (req, res) => res.status(404).json({ error: 'Not found' }));
 

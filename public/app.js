@@ -1,4 +1,4 @@
-/* global Quill, XLSX, MailmergeRender */
+/* global Jodit, XLSX, MailmergeRender */
 (function () {
   'use strict';
 

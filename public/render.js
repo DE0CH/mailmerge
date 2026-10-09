@@ -3,7 +3,7 @@
 (function (root) {
   'use strict';
 
-  // {{name}} / {{ Email }} — also the URL-encoded form Quill can leave inside link hrefs.
+  // {{name}} / {{ Email }} — also the URL-encoded form an editor can leave inside link hrefs.
   const PLACEHOLDER = /\{\{\s*(name|email)\s*\}\}|%7B%7B\s*(name|email)\s*%7D%7D/gi;
 
   const EMAIL_RE = /^[^\s@<>()[\]\\,;:"]+@[^\s@<>()[\]\\,;:"]+\.[^\s@<>()[\]\\,;:"]{2,}$/;
