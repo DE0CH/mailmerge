@@ -29,7 +29,7 @@
     try { localStorage.removeItem(key); } catch (e) { /* ignore */ }
   }
 
-  const DEFAULT_SMTP = { host: '', port: 465, security: 'ssl', user: '', pass: '', fromAddress: '', fromName: '' };
+  const DEFAULT_SMTP = { host: '', port: 587, security: 'starttls', user: '', pass: '', fromAddress: '', fromName: '' };
   const DEFAULT_TEMPLATE = { subject: '', html: '', delta: null };
   const DEFAULT_PREFS = { tab: 'sender', delayMs: 1000, previewId: '', testTo: '' };
 

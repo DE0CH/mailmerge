@@ -28,6 +28,7 @@
       <div class="card narrow">
         <h2>SMTP server</h2>
         <p class="hint">Saved only in this browser. The server never stores them; they are sent along with each request.</p>
+        <p class="hint">Use port 587 with STARTTLS. This server's host blocks outgoing ports 465 and 25, so SSL/TLS on 465 times out.</p>
         <form id="smtpForm" autocomplete="off" novalidate>
           <div class="grid2">
             <label class="field span2">Host
@@ -35,13 +36,13 @@
             </label>
             <label class="field">Security
               <select name="security">
-                <option value="ssl">SSL/TLS</option>
                 <option value="starttls">STARTTLS</option>
+                <option value="ssl">SSL/TLS</option>
                 <option value="none">None (plain)</option>
               </select>
             </label>
             <label class="field">Port
-              <input name="port" type="number" inputmode="numeric" min="1" max="65535" placeholder="465">
+              <input name="port" type="number" inputmode="numeric" min="1" max="65535" placeholder="587">
             </label>
             <label class="field">Username
               <input name="user" type="text" autocomplete="off" autocapitalize="off" spellcheck="false">
