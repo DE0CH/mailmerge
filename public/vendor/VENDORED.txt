@@ -1,0 +1,5 @@
+Third-party files served as-is (no CDN at runtime):
+
+quill.js, quill.snow.css   Quill 2.0.3 (npm quill@2.0.3, dist/)          BSD-3-Clause  https://github.com/slab/quill
+xlsx.full.min.js           SheetJS Community Edition 0.20.3               Apache-2.0    https://cdn.sheetjs.com/xlsx-0.20.3/
+                           (from cdn.sheetjs.com; the npm "xlsx" 0.18.5 is outdated and has known advisories)

@@ -1,0 +1,25 @@
+{
+  "name": "mailmerge",
+  "version": "1.0.0",
+  "description": "Small self-hosted mail merge: SMTP settings in the browser, WYSIWYG template, recipient list with Excel import, sequential sending with progress.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test/e2e.mjs"
+  },
+  "author": "Deyao Chen",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.22.3",
+    "html-to-text": "^10.0.1",
+    "nodemailer": "^10.0.16"
+  },
+  "devDependencies": {
+    "mailparser": "^3.9.37",
+    "smtp-server": "^3.19.18"
+  },
+  "private": true,
+  "engines": {
+    "node": ">=22"
+  }
+}

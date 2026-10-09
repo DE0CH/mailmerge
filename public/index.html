@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mail merge</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect x='2' y='5' width='20' height='14' rx='2' fill='%230f6e6e'/%3E%3Cpath d='M3 7l9 6 9-6' stroke='white' stroke-width='1.8' fill='none'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="vendor/quill.snow.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <h1 class="brand">Mail merge</h1>
+      <nav class="tabs" role="tablist" aria-label="Sections">
+        <button role="tab" data-tab="sender">Sender</button>
+        <button role="tab" data-tab="template">Template</button>
+        <button role="tab" data-tab="recipients">Recipients <span class="tab-count" id="tabCount"></span></button>
+        <button role="tab" data-tab="send">Send</button>
+        <button role="tab" data-tab="sync">Sync</button>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <!-- SENDER -->
+    <section class="panel" id="tab-sender" role="tabpanel" hidden>
+      <div class="card narrow">
+        <h2>SMTP server</h2>
+        <p class="hint">Saved only in this browser. The server never stores them; they are sent along with each request.</p>
+        <form id="smtpForm" autocomplete="off" novalidate>
+          <div class="grid2">
+            <label class="field span2">Host
+              <input name="host" type="text" placeholder="smtp.example.com" autocapitalize="off" spellcheck="false">
+            </label>
+            <label class="field">Security
+              <select name="security">
+                <option value="ssl">SSL/TLS</option>
+                <option value="starttls">STARTTLS</option>
+                <option value="none">None (plain)</option>
+              </select>
+            </label>
+            <label class="field">Port
+              <input name="port" type="number" inputmode="numeric" min="1" max="65535" placeholder="465">
+            </label>
+            <label class="field">Username
+              <input name="user" type="text" autocomplete="off" autocapitalize="off" spellcheck="false">
+            </label>
+            <label class="field">Password
+              <span class="pw">
+                <input name="pass" type="password" autocomplete="new-password">
+                <button type="button" class="btn ghost small" id="pwToggle">Show</button>
+              </span>
+            </label>
+          </div>
+          <h2 class="mt">Sender</h2>
+          <div class="grid2">
+            <label class="field"><span>Display name <span class="req">required</span></span>
+              <input name="fromName" type="text" placeholder="Jane Doe" required>
+              <span class="field-error" data-err="fromName"></span>
+            </label>
+            <label class="field">From address
+              <input name="fromAddress" type="email" placeholder="jane@example.com" autocapitalize="off" spellcheck="false">
+              <span class="field-error" data-err="fromAddress"></span>
+            </label>
+          </div>
+          <p class="hint">Mail arrives as <strong id="fromPreview">—</strong></p>
+          <div class="actions">
+            <button type="button" class="btn primary" id="verifyBtn">Test connection</button>
+            <span class="status-line" id="verifyStatus"></span>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <!-- TEMPLATE -->
+    <section class="panel" id="tab-template" role="tabpanel" hidden>
+      <div class="split">
+        <div class="card">
+          <h2>Template</h2>
+          <label class="field">Subject
+            <input id="subject" type="text" placeholder="Hello {{name}}">
+          </label>
+          <div class="chips" aria-label="Insert placeholder">
+            <span class="chips-label">Insert</span>
+            <button type="button" class="chip" data-ph="name">{{name}}</button>
+            <button type="button" class="chip" data-ph="email">{{email}}</button>
+            <span class="chips-target" id="phTarget">into the body</span>
+          </div>
+          <div class="editor-wrap">
+            <div id="editor"></div>
+          </div>
+          <p class="hint">A plain-text version is generated from this automatically. Values filled into the body are HTML-escaped.</p>
+        </div>
+        <div class="card preview-card">
+          <div class="preview-head">
+            <h2>Preview</h2>
+            <label class="field inline">For
+              <select id="previewFor"></select>
+            </label>
+          </div>
+          <div class="mail-meta">
+            <div><span class="k">From</span><span id="pvFrom"></span></div>
+            <div><span class="k">To</span><span id="pvTo"></span></div>
+            <div><span class="k">Subject</span><strong id="pvSubject"></strong></div>
+          </div>
+          <iframe id="previewFrame" title="Email preview" sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"></iframe>
+        </div>
+      </div>
+    </section>
+
+    <!-- RECIPIENTS -->
+    <section class="panel" id="tab-recipients" role="tabpanel" hidden>
+      <div class="card">
+        <div class="card-head">
+          <h2>Import from Excel</h2>
+          <button type="button" class="btn ghost small" id="templateDl">Download template</button>
+        </div>
+        <p class="hint">.xlsx, .xls or .csv with two columns, Name and Email. A header row is optional.</p>
+        <label class="file">
+          <input type="file" id="importFile" accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv">
+          <span class="btn">Choose file…</span>
+          <span class="file-name" id="importFileName">No file chosen</span>
+        </label>
+        <div id="importResult" class="import-result" hidden>
+          <p id="importSummary"></p>
+          <div class="actions">
+            <button type="button" class="btn primary" id="importReplace">Replace list</button>
+            <button type="button" class="btn" id="importAppend">Append to list</button>
+            <button type="button" class="btn ghost" id="importDiscard">Discard</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2>Recipients</h2>
+          <span class="muted" id="listCount"></span>
+        </div>
+        <div id="listBanner"></div>
+        <div class="toolbar">
+          <button type="button" class="btn primary small" id="addRow">Add recipient</button>
+          <button type="button" class="btn small" id="selAll">Select all</button>
+          <button type="button" class="btn small" id="selNone">Select none</button>
+          <button type="button" class="btn small" id="delSel">Delete selected</button>
+          <button type="button" class="btn ghost small danger" id="clearAll">Clear list</button>
+        </div>
+        <div class="list-head" aria-hidden="true">
+          <span></span><span>Name</span><span>Email</span><span>Status</span><span></span>
+        </div>
+        <div id="list" class="list"></div>
+        <p class="empty" id="listEmpty">No recipients yet. Add one, or import a spreadsheet above.</p>
+      </div>
+    </section>
+
+    <!-- SEND -->
+    <section class="panel" id="tab-send" role="tabpanel" hidden>
+      <div class="split">
+        <div class="card">
+          <h2>Send</h2>
+          <ul class="checklist" id="checklist"></ul>
+          <label class="field inline-num">Pause between emails
+            <span class="num-unit"><input type="number" id="delay" min="0" max="60" step="0.5" inputmode="decimal"> seconds</span>
+          </label>
+          <div class="actions">
+            <button type="button" class="btn primary" id="sendBtn">Send</button>
+            <button type="button" class="btn danger" id="cancelBtn" hidden>Cancel</button>
+          </div>
+          <div id="progress" class="progress" hidden>
+            <div class="bar"><span id="progressBar"></span></div>
+            <p id="progressText"></p>
+          </div>
+          <div id="sendSummary"></div>
+          <div id="results" class="results"></div>
+        </div>
+        <div class="card">
+          <h2>Send a test</h2>
+          <p class="hint">Sends one email, filled in for the recipient chosen below, to the address you type.</p>
+          <label class="field">Send to
+            <input id="testTo" type="email" placeholder="you@example.com" autocapitalize="off" spellcheck="false">
+          </label>
+          <label class="field">Fill in as
+            <select id="testAs"></select>
+          </label>
+          <div class="actions">
+            <button type="button" class="btn" id="testBtn">Send test</button>
+            <span class="status-line" id="testStatus"></span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SYNC -->
+    <section class="panel" id="tab-sync" role="tabpanel" hidden>
+      <div class="split">
+        <div class="card">
+          <h2>Export settings</h2>
+          <p class="hint">One text key holding everything: SMTP settings including the password, the sender name, the template and the recipient list.</p>
+          <div class="actions">
+            <button type="button" class="btn primary" id="exportBtn">Export settings</button>
+          </div>
+          <div id="exportOut" hidden>
+            <div class="note warn">This is the key to sync your settings. Save it somewhere safe — anyone who has it can log in to the mailbox and send email as you.</div>
+            <textarea id="exportText" readonly rows="6" spellcheck="false"></textarea>
+            <div class="actions">
+              <button type="button" class="btn" id="copyBtn">Copy</button>
+              <button type="button" class="btn ghost" id="hideExport">Hide</button>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <h2>Import settings</h2>
+          <p class="hint">Paste a key exported from another browser. It replaces everything here.</p>
+          <textarea id="importText" rows="6" spellcheck="false" placeholder="Paste the settings key"></textarea>
+          <div class="actions">
+            <button type="button" class="btn primary" id="importBtn">Import settings</button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+
+  <div id="dialog" class="dialog-backdrop" hidden>
+    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dialogTitle">
+      <h3 id="dialogTitle"></h3>
+      <div id="dialogBody"></div>
+      <div class="actions end" id="dialogActions"></div>
+    </div>
+  </div>
+
+  <script src="vendor/quill.js"></script>
+  <script src="vendor/xlsx.full.min.js"></script>
+  <script src="render.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
