@@ -30,7 +30,7 @@
   }
 
   const DEFAULT_SMTP = { host: '', port: 587, security: 'starttls', user: '', pass: '', fromAddress: '', fromName: '' };
-  const DEFAULT_TEMPLATE = { subject: '', html: '', delta: null };
+  const DEFAULT_TEMPLATE = { subject: '', html: '' };
   const DEFAULT_PREFS = { tab: 'sender', delayMs: 1000, previewId: '', testTo: '' };
 
   let uid = 0;
@@ -232,36 +232,55 @@
 
   // ---------- template ----------
 
-  const quill = new Quill('#editor', {
-    theme: 'snow',
+  // Jodit (MIT) is the whole editor: visual mode plus its own HTML source mode.
+  const editor = Jodit.make('#editor', {
     placeholder: 'Dear {{name}},',
-    modules: {
-      toolbar: [
-        [{ header: [1, 2, 3, false] }],
-        ['bold', 'italic', 'underline'],
-        [{ color: [] }],
-        [{ list: 'ordered' }, { list: 'bullet' }],
-        ['link'],
-        ['clean'],
-      ],
-    },
+    minHeight: 300,
+    height: 'auto',
+    maxHeight: 640,
+    toolbarAdaptive: true,
+    askBeforePasteHTML: false,
+    askBeforePasteFromWord: false,
+    sourceEditor: 'area',            // plain textarea: no Ace loaded from a CDN
+    beautifyHTML: false,             // would load js-beautify from a CDN
+    showCharsCounter: false,
+    showWordsCounter: false,
+    showXPathInStatusbar: false,
+    buttons: ['paragraph', 'bold', 'italic', 'underline', 'strikethrough', '|', 'brush', 'font', 'fontsize', '|',
+      'ul', 'ol', 'align', 'indent', 'outdent', '|', 'link', 'image', 'table', 'hr', '|', 'undo', 'redo', 'eraser', 'source'],
   });
 
   function editorHtml() {
-    if (quill.getLength() <= 1) return '';
-    return R.normalizeSpaces(quill.getSemanticHTML());
+    const html = editor.value || '';
+    return html.replace(/<p><br><\/p>/g, '').trim() ? html : '';
   }
 
+  const modeTabs = $$('.mode-tab');
+  function showMode() {
+    const html = editor.getMode() === Jodit.MODE_SOURCE;
+    modeTabs.forEach((t) => {
+      const on = (t.dataset.mode === 'html') === html;
+      t.classList.toggle('active', on);
+      t.setAttribute('aria-selected', String(on));
+    });
+  }
+  modeTabs.forEach((t) => t.addEventListener('click', () => {
+    editor.setMode(t.dataset.mode === 'html' ? Jodit.MODE_SOURCE : Jodit.MODE_WYSIWYG);
+  }));
+  editor.events.on('afterSetMode', () => {
+    showMode();
+    state.prefs.editorMode = editor.getMode() === Jodit.MODE_SOURCE ? 'html' : 'visual';
+    savePrefs();
+  });
+
   function loadEditor() {
-    if (state.template.delta) quill.setContents(state.template.delta, 'silent');
-    else if (state.template.html) quill.setContents(quill.clipboard.convert({ html: state.template.html }), 'silent');
-    else quill.setContents([], 'silent');
-    state.template.html = editorHtml();
+    editor.value = state.template.html || '';
+    editor.setMode(state.prefs.editorMode === 'html' ? Jodit.MODE_SOURCE : Jodit.MODE_WYSIWYG);
+    showMode();
   }
 
   let previewTimer = null;
-  quill.on('text-change', () => {
-    state.template.delta = quill.getContents();
+  editor.events.on('change', () => {
     state.template.html = editorHtml();
     saveTemplate();
     clearTimeout(previewTimer);
@@ -277,13 +296,12 @@
 
   // Placeholder insertion goes to whichever of subject/body was focused last.
   let phTarget = 'body';
-  let lastRange = null;
   function setPhTarget(t) {
     phTarget = t;
     $('#phTarget').textContent = t === 'subject' ? 'into the subject' : 'into the body';
   }
   subjectEl.addEventListener('focus', () => setPhTarget('subject'));
-  quill.on('selection-change', (range) => { if (range) { lastRange = range; setPhTarget('body'); } });
+  editor.events.on('focus', () => setPhTarget('body'));
 
   $$('.chip[data-ph]').forEach((chip) => {
     chip.addEventListener('mousedown', (e) => e.preventDefault()); // keep the caret where it is
@@ -296,10 +314,7 @@
         subjectEl.focus();
         subjectEl.dispatchEvent(new Event('input'));
       } else {
-        const range = quill.getSelection() || lastRange || { index: Math.max(0, quill.getLength() - 1), length: 0 };
-        if (range.length) quill.deleteText(range.index, range.length, 'user');
-        quill.insertText(range.index, text, 'user');
-        quill.setSelection(range.index + text.length, 0, 'user');
+        editor.s.insertHTML(text);
       }
     });
   });
@@ -342,7 +357,7 @@
   function updatePreview() {
     updatePreviewMeta();
     const r = previewRecipient();
-    const body = R.renderBodyHtml(R.normalizeSpaces(state.template.html), r);
+    const body = R.renderBodyHtml(state.template.html, r);
     const doc = R.wrapDocument(body).replace('<head>', '<head><base target="_blank">');
     frame.srcdoc = doc;
   }
@@ -902,7 +917,7 @@
       v: 1,
       exportedAt: new Date().toISOString(),
       smtp: smtpPayload(),
-      template: { subject: state.template.subject, html: state.template.html, delta: state.template.delta },
+      template: { subject: state.template.subject, html: state.template.html },
       recipients: state.recipients.map(({ name, email, selected }) => ({ name, email, selected })),
       prefs: { delayMs: state.prefs.delayMs, testTo: state.prefs.testTo },
     };
@@ -947,7 +962,7 @@
     });
     if (!ok) return;
     state.smtp = Object.assign({}, DEFAULT_SMTP, data.smtp || {});
-    state.template = Object.assign({}, DEFAULT_TEMPLATE, data.template || {});
+    state.template = { subject: String((data.template || {}).subject || ''), html: String((data.template || {}).html || '') };
     state.recipients = (data.recipients || []).map(cleanRecipient);
     state.prefs = Object.assign({}, state.prefs, (data.prefs && typeof data.prefs === 'object') ? data.prefs : {});
     state.status = {};

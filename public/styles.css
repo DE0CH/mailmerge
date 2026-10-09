@@ -149,12 +149,15 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); ou
   border: 1px solid transparent; border-radius: 999px; padding: 4px 10px; cursor: pointer;
 }
 .chip:hover { border-color: var(--accent); }
-.editor-wrap { border-radius: 8px; }
-.editor-wrap .ql-toolbar.ql-snow { border-color: var(--border); border-radius: 8px 8px 0 0; background: var(--surface-2); font-family: var(--font); }
-.editor-wrap .ql-container.ql-snow { border-color: var(--border); border-radius: 0 0 8px 8px; font: 15px/1.5 Arial, Helvetica, sans-serif; }
-.editor-wrap .ql-editor { min-height: 260px; max-height: 60vh; overflow-y: auto; }
-.ql-snow .ql-tooltip { z-index: 5; left: 8px !important; max-width: calc(100% - 16px); }
-.ql-snow .ql-tooltip input[type=text] { width: 160px; font-size: 16px; padding: 3px 5px; }
+.editor-wrap .jodit-container:not(.jodit_inline) { border-color: var(--border); border-radius: 0 8px 8px 8px; }
+.editor-wrap .jodit-wysiwyg { font: 15px/1.5 Arial, Helvetica, sans-serif; color: #1f2328; }
+.editor-wrap .jodit-wysiwyg p { margin: 0; }
+.editor-wrap .jodit-source__mirror { font: 13px/1.5 ui-monospace, Menlo, Consolas, monospace; }
+.mode-tabs { display: flex; gap: 0; }
+.mode-tab { font: inherit; font-size: 13px; padding: 6px 14px; border: 1px solid var(--border); border-bottom: none; background: var(--surface-2); color: var(--muted); cursor: pointer; }
+.mode-tab:first-child { border-radius: 8px 0 0 0; }
+.mode-tab:last-child { border-radius: 0 8px 0 0; border-left: none; }
+.mode-tab.active { background: var(--surface, #fff); color: var(--text, #1f2328); font-weight: 600; }
 
 /* ---------- preview ---------- */
 .preview-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; flex-wrap: wrap; }

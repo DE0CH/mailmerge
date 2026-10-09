@@ -77,7 +77,7 @@ with sync_playwright() as p:
     page.click(".chip[data-ph=name]")
     page.type("#subject", ", a note for you")
     expect(page.locator("#subject")).to_have_value("Hello {{name}}, a note for you")
-    page.click(".ql-editor")
+    page.click(".jodit-wysiwyg")
     page.keyboard.type("Dear ")
     page.click(".chip[data-ph=name]")
     page.keyboard.type(",")
@@ -88,7 +88,7 @@ with sync_playwright() as p:
     page.keyboard.type(" sent to ")
     page.click(".chip[data-ph=email]")
     page.keyboard.press("Enter")
-    page.click(".ql-list[value=bullet]")
+    page.click(".jodit-toolbar-button_ul .jodit-toolbar-button__button")
     page.keyboard.type("first point")
     page.keyboard.press("Enter")
     page.keyboard.type("second point")
@@ -199,7 +199,7 @@ with sync_playwright() as p:
     tab(page, "recipients")
     expect(page.locator("#list .row")).to_have_count(5)
     tab(page, "template")
-    expect(page.locator(".ql-editor strong")).to_have_text("Bold line")
+    expect(page.locator(".jodit-wysiwyg strong")).to_have_text("Bold line")
 
     # --- Phone width ---
     mob = browser.new_context(viewport={"width": 390, "height": 844}, device_scale_factor=2, is_mobile=True, has_touch=True)

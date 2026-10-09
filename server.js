@@ -73,21 +73,22 @@ function makeTransport(smtp, { pool = false } = {}) {
 }
 
 function buildMessage(smtp, template, recipient) {
-  const bodyHtml = R.renderBodyHtml(R.normalizeSpaces(template.html), recipient);
+  const bodyHtml = R.renderBodyHtml(template.html, recipient);
   return {
     from: { name: smtp.fromName, address: smtp.fromAddress },
     to: recipient.name ? { name: recipient.name, address: recipient.email } : recipient.email,
     subject: R.renderSubject(template.subject, recipient),
     html: R.wrapDocument(bodyHtml),
-    text: htmlToText(bodyHtml, {
+    text: htmlToText(R.mailFriendly(bodyHtml), {
       wordwrap: 78,
       selectors: [
         { selector: 'a', options: { hideLinkHrefIfSameAsText: true } },
+        { selector: 'p', options: { leadingLineBreaks: 1, trailingLineBreaks: 1 } },
         { selector: 'h1', options: { uppercase: false } },
         { selector: 'h2', options: { uppercase: false } },
         { selector: 'h3', options: { uppercase: false } },
       ],
-    }),
+    }).replace(/\u00a0/g, ' '), // the editor stores typed trailing spaces as &nbsp;
   };
 }
 

@@ -6,8 +6,9 @@ each recipient, and send it one message at a time through your own SMTP server.
 - **Sender**: SMTP host, port, security (SSL/TLS, STARTTLS or none), username, password, From
   address and a **required** display name, so mail always arrives as `Name <address>`.
   "Test connection" runs an SMTP login check.
-- **Template**: subject plus a WYSIWYG body (Quill: headings, bold/italic/underline, colour,
-  lists, links). `{{name}}` / `{{email}}` work in both; values filled into the body are
+- **Template**: subject plus a body edited in [Jodit](https://github.com/xdan/jodit), with a
+  Visual tab (WYSIWYG) and an HTML tab (raw source). A full HTML document pasted into the HTML
+  tab is sent as it is. `{{name}}` / `{{email}}` work in both; values filled into the body are
   HTML-escaped. A plain-text part is generated from the HTML. Live preview per recipient.
 - **Recipients**: editable list (add, edit inline, delete, select/deselect), invalid-address and
   duplicate warnings. Import `.xlsx` / `.xls` / `.csv` (Name, Email; header row optional),
@@ -74,7 +75,7 @@ MAIL_DIR=/tmp/mm-mail python3 test/ui_test.py shots/   # Playwright; screenshots
 
 ## Third-party code
 
-`public/vendor/` holds Quill 2.0.3 (BSD-3-Clause) and SheetJS CE 0.20.3 (Apache-2.0), served
+`public/vendor/` holds Jodit 4.15.14 (MIT) and SheetJS CE 0.20.3 (Apache-2.0), served
 locally; see `public/vendor/VENDORED.txt`.
 
 ## License

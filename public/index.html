@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Mail merge</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect x='2' y='5' width='20' height='14' rx='2' fill='%230f6e6e'/%3E%3Cpath d='M3 7l9 6 9-6' stroke='white' stroke-width='1.8' fill='none'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="vendor/quill.snow.css">
+  <link rel="stylesheet" href="vendor/jodit.min.css">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -88,8 +88,12 @@
             <button type="button" class="chip" data-ph="email">{{email}}</button>
             <span class="chips-target" id="phTarget">into the body</span>
           </div>
+          <div class="mode-tabs" role="tablist" aria-label="Editor">
+            <button type="button" class="mode-tab" data-mode="visual" role="tab">Visual</button>
+            <button type="button" class="mode-tab" data-mode="html" role="tab">HTML</button>
+          </div>
           <div class="editor-wrap">
-            <div id="editor"></div>
+            <textarea id="editor"></textarea>
           </div>
           <p class="hint">A plain-text version is generated from this automatically. Values filled into the body are HTML-escaped.</p>
         </div>
@@ -231,7 +235,7 @@
     </div>
   </div>
 
-  <script src="vendor/quill.js"></script>
+  <script src="vendor/jodit.min.js"></script>
   <script src="vendor/xlsx.full.min.js"></script>
   <script src="render.js"></script>
   <script src="app.js"></script>

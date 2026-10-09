@@ -41,29 +41,42 @@
     });
   }
 
-  // Quill 2.0.x getSemanticHTML() turns every space into &nbsp;, which stops lines wrapping in
-  // mail clients. Turn single &nbsp; back into spaces, keep runs of them as alternating space/&nbsp;.
-  function normalizeSpaces(html) {
-    return String(html || '').replace(/(?:&nbsp;| )+/g, (run) => {
-      const n = (run.match(/&nbsp;| /g) || []).length;
-      let out = '';
-      for (let i = 0; i < n; i++) out += i % 2 === 0 ? ' ' : '&nbsp;';
-      return out;
-    });
+  // Mail clients give <p> a 1em margin and drop empty paragraphs, so the editor's blank lines vanished
+  // and line spacing changed. Keep empty lines (<p><br></p>) and inline the editor's own spacing.
+  const INLINE = {
+    p: 'margin:0',
+    h1: 'font-size:24px;margin:0 0 12px', h2: 'font-size:20px;margin:0 0 10px', h3: 'font-size:17px;margin:0 0 8px',
+    ul: 'margin:0 0 8px;padding-left:24px', ol: 'margin:0 0 8px;padding-left:24px',
+  };
+  function mailFriendly(html) {
+    return String(html || '')
+      .replace(/<p([^>]*)>\s*<\/p>/gi, '<p$1><br></p>')
+      .replace(/<(p|h1|h2|h3|ul|ol)(\s[^>]*)?>/gi, (m, tag, attrs) => {
+        attrs = attrs || '';
+        if (/\sstyle\s*=/i.test(attrs)) return m;
+        return `<${tag}${attrs} style="${INLINE[tag.toLowerCase()]}">`;
+      });
+  }
+
+  // A full document from the HTML tab is sent as it is.
+  function isFullDocument(html) {
+    return /<html[\s>]|<body[\s>]|<!doctype/i.test(String(html || ''));
   }
 
   function wrapDocument(bodyHtml) {
+    if (isFullDocument(bodyHtml)) return bodyHtml;
     return (
       '<!doctype html><html><head><meta charset="utf-8">' +
       '<meta name="viewport" content="width=device-width, initial-scale=1">' +
       '<style>body{margin:0;padding:16px;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.5;color:#1f2328}' +
       'h1{font-size:24px;margin:0 0 12px}h2{font-size:20px;margin:0 0 10px}h3{font-size:17px;margin:0 0 8px}' +
-      'p{margin:0 0 4px}a{color:#0b6bcb}ul,ol{margin:0 0 8px;padding-left:24px}</style>' +
-      '</head><body>' + bodyHtml + '</body></html>'
+      'p{margin:0}a{color:#0b6bcb}ul,ol{margin:0 0 8px;padding-left:24px}</style>' +
+      '</head><body style="margin:0;padding:16px;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.5;color:#1f2328">' +
+      mailFriendly(bodyHtml) + '</body></html>'
     );
   }
 
-  const api = { PLACEHOLDER, isEmail, escapeHtml, renderSubject, renderBodyHtml, normalizeSpaces, wrapDocument };
+  const api = { PLACEHOLDER, isEmail, escapeHtml, renderSubject, renderBodyHtml, mailFriendly, isFullDocument, wrapDocument };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.MailmergeRender = api;
 })(typeof self !== 'undefined' ? self : this);

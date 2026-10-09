@@ -17,7 +17,7 @@ const smtp = {
 };
 const template = {
   subject: 'Hello {{name}} ({{ EMAIL }})',
-  html: '<h2>Hi&nbsp;{{name}},</h2><p>Your address is <strong>{{email}}</strong>.</p><ul><li>one</li><li>two</li></ul><p><a href="https://example.com/?u=%7B%7Bemail%7D%7D">link</a></p>',
+  html: '<h2>Hi {{name}},</h2><p></p><p>Your address is <strong>{{email}}</strong>.</p><ul><li>one</li><li>two</li></ul><p><a href="https://example.com/?u=%7B%7Bemail%7D%7D">link</a></p>',
 };
 
 async function call(method, path, body) {
@@ -42,7 +42,7 @@ try {
   });
 
   await test('index + vendored assets are served', async () => {
-    for (const p of ['/', '/app.js', '/render.js', '/styles.css', '/vendor/quill.js', '/vendor/quill.snow.css', '/vendor/xlsx.full.min.js']) {
+    for (const p of ['/', '/app.js', '/render.js', '/styles.css', '/vendor/jodit.min.js', '/vendor/jodit.min.css', '/vendor/xlsx.full.min.js']) {
       const r = await fetch(base + p);
       assert.equal(r.status, 200, p);
     }
@@ -115,6 +115,7 @@ try {
     assert.equal(alice.subject, 'Hello Alice <b>&amp; Co</b> (alice@example.com)');
     // HTML part: escaped value, no raw injected tag, URL-encoded placeholder replaced.
     assert.ok(alice.html.includes('Hi Alice &lt;b&gt;&amp;amp; Co&lt;/b&gt;,'), alice.html);
+    assert.ok(alice.html.includes('<p style="margin:0"><br></p>'), 'empty line kept: ' + alice.html);
     assert.ok(!alice.html.includes('<b>&amp; Co</b>'));
     assert.ok(alice.html.includes('<strong>alice@example.com</strong>'));
     assert.ok(alice.html.includes('href="https://example.com/?u=alice@example.com"'), alice.html);
