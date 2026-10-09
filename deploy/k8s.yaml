@@ -1,0 +1,26 @@
+# Deploy: KUBECONFIG=<hz-k3s> kubectl apply -f deploy/k8s.yaml (hetzner-runners skill)
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: mailmerge, namespace: mailmerge}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: mailmerge}}
+  template:
+    metadata: {labels: {app: mailmerge}}
+    spec:
+      containers:
+        - name: mailmerge
+          image: ghcr.io/de0ch/mailmerge:latest
+          imagePullPolicy: Always
+          ports: [{containerPort: 8080}]
+          env: [{name: PORT, value: "8080"}]
+          readinessProbe: {httpGet: {path: /healthz, port: 8080}}
+          livenessProbe: {httpGet: {path: /healthz, port: 8080}, initialDelaySeconds: 10}
+          resources: {requests: {cpu: 50m, memory: 64Mi}, limits: {memory: 256Mi}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: mailmerge, namespace: mailmerge}
+spec:
+  selector: {app: mailmerge}
+  ports: [{port: 80, targetPort: 8080}]
