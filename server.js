@@ -248,7 +248,11 @@ function createApp() {
     res.json(publicJob(job));
   });
 
-  app.use(express.static(path.join(__dirname, 'public'), { index: 'index.html' }));
+  // no-cache: the Cloudflare edge in front kept serving an old app.js after a deploy
+  app.use(express.static(path.join(__dirname, 'public'), {
+    index: 'index.html',
+    setHeaders: (res) => res.setHeader('Cache-Control', 'no-cache'),
+  }));
 
   app.use('/api', (req, res) => res.status(404).json({ error: 'Not found' }));
 
