@@ -1,4 +1,4 @@
-# Deploy: KUBECONFIG=<hz-k3s> kubectl apply -f deploy/k8s.yaml (hetzner-runners skill)
+# Plain-Kubernetes example. Production runs this app as an extra app on a Jarvis 3 instance box (DE0CH/jarvis3 docs/DEPLOY.md, "Extra apps"), with a pinned image, in its own namespace.
 apiVersion: apps/v1
 kind: Deployment
 metadata: {name: mailmerge, namespace: mailmerge}
