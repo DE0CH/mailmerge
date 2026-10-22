@@ -2,11 +2,14 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { startFakeSmtp } from './fake-smtp.mjs';
+import { startFakeImap, FIXTURE } from './fake-imap.mjs';
 
 const require = createRequire(import.meta.url);
 const { createApp } = require('../server.js');
+const IMAP = require('../imap.js');
 
 const smtpSrv = await startFakeSmtp({ failFor: ['bounce@example.com'] });
+const imapSrv = await startFakeImap();
 const http = createApp().listen(0, '127.0.0.1');
 await new Promise((r) => http.once('listening', r));
 const base = `http://127.0.0.1:${http.address().port}`;
@@ -19,6 +22,9 @@ const template = {
   subject: 'Hello {{name}} ({{ EMAIL }})',
   html: '<h2>Hi {{name}},</h2><p></p><p>Your address is <strong>{{email}}</strong>.</p><ul><li>one</li><li>two</li></ul><p><a href="https://example.com/?u=%7B%7Bemail%7D%7D">link</a></p>',
 };
+
+// no user/pass: the IMAP login falls back to the SMTP one
+const imap = { host: '127.0.0.1', port: imapSrv.port, security: 'none' };
 
 async function call(method, path, body) {
   const res = await fetch(base + path, {
@@ -156,8 +162,95 @@ try {
     assert.equal(r.status, 413);
   });
 
+  await test('IMAP settings: derived from SMTP when the key has none, else taken from the key', async () => {
+    const feishu = { host: 'smtp.feishu.cn', port: 587, security: 'starttls', user: 'a@yyc.hk', pass: 'pw' };
+    assert.deepEqual(IMAP.parseImap(undefined, feishu), { host: 'imap.feishu.cn', port: 993, security: 'ssl', user: 'a@yyc.hk', pass: 'pw' });
+    assert.equal(IMAP.parseImap(null, { ...feishu, host: 'mail.example.com' }).host, 'mail.example.com');
+    assert.deepEqual(
+      IMAP.parseImap({ host: 'imap.other.example', port: 143, security: 'starttls', user: 'u', pass: 'p' }, feishu),
+      { host: 'imap.other.example', port: 143, security: 'starttls', user: 'u', pass: 'p' });
+    assert.deepEqual(IMAP.parseImap({ host: 'imap.x.example' }, feishu), { host: 'imap.x.example', port: 993, security: 'ssl', user: 'a@yyc.hk', pass: 'pw' });
+    const r = await call('POST', '/api/sent', { smtp, imap: { host: 'h', port: 99999 } });
+    assert.equal(r.status, 400);
+  });
+
+  await test('verify can check IMAP too and finds the \\Sent folder', async () => {
+    const r = await call('POST', '/api/verify', { smtp, imap, checkImap: true });
+    assert.equal(r.data.ok, true);
+    assert.equal(r.data.imap.ok, true, JSON.stringify(r.data));
+    assert.equal(r.data.imap.folder, '已发送');
+    const bad = await call('POST', '/api/verify', { smtp, imap: { ...imap, pass: 'nope' }, checkImap: true });
+    assert.equal(bad.data.imap.ok, false);
+    assert.match(bad.data.imap.error, /IMAP login failed/);
+  });
+
+  let page1;
+  await test('sent: first page, newest first, with bounce statuses', async () => {
+    const r = await call('POST', '/api/sent', { smtp, imap, offset: 0, limit: 50 });
+    assert.equal(r.status, 200);
+    assert.equal(r.data.ok, true, JSON.stringify(r.data));
+    page1 = r.data;
+    assert.equal(r.data.folder, '已发送');
+    assert.equal(r.data.total, FIXTURE.fillers + 6);
+    assert.equal(r.data.items.length, 50);
+    assert.equal(r.data.hasMore, true);
+    const dates = r.data.items.map((i) => i.date);
+    assert.deepEqual(dates, [...dates].sort().reverse(), 'newest first');
+    const by = Object.fromEntries(r.data.items.map((i) => [i.messageId.replace(/[<>]/g, ''), i]));
+    assert.equal(by[FIXTURE.replied].status, 'not-bounced', 'a human reply is not a bounce');
+    assert.equal(by[FIXTURE.delayed].status, 'not-bounced', 'a delayed DSN is not a bounce');
+    assert.equal(by[FIXTURE.ok].status, 'not-bounced', 'a References header in a DSN does not bounce that message');
+    const fs = by[FIXTURE.feishu];
+    assert.equal(fs.status, 'bounced');
+    assert.equal(fs.subject, '季度通訊');
+    assert.equal(fs.bounces[0].address, 'nobody@bounce.example');
+    assert.match(fs.bounces[0].reason, /Email delivery failed/);
+    const dsn = by[FIXTURE.dsn];
+    assert.equal(dsn.status, 'bounced');
+    assert.equal(dsn.bounces[0].address, 'ghost@example.org');
+    assert.match(dsn.bounces[0].reason, /5\.1\.1.*User unknown/);
+    const notice = by[FIXTURE.notice];
+    assert.equal(notice.status, 'bounced');
+    assert.equal(notice.bounces[0].address, 'old@example.net');
+    assert.equal(r.data.items.filter((i) => i.status === 'bounced').length, 3);
+    assert.deepEqual(by[FIXTURE.ok].to, [{ name: 'Alice', address: 'alice@example.com' }]);
+  });
+
+  await test('sent: load more returns the rest', async () => {
+    const r = await call('POST', '/api/sent', { smtp, imap, offset: 50, limit: 50 });
+    assert.equal(r.data.items.length, FIXTURE.fillers + 6 - 50);
+    assert.equal(r.data.hasMore, false);
+    const all = new Set([...page1.items, ...r.data.items].map((i) => i.uid));
+    assert.equal(all.size, FIXTURE.fillers + 6);
+    assert.equal(r.data.items.at(-1).subject, 'Newsletter 1');
+    const past = await call('POST', '/api/sent', { smtp, imap, offset: 500 });
+    assert.deepEqual(past.data.items, []);
+  });
+
+  await test('sent message: full content by uid', async () => {
+    const it = page1.items.find((i) => i.messageId.includes(FIXTURE.replied));
+    const r = await call('POST', '/api/sent/message', { smtp, imap, uid: it.uid });
+    assert.equal(r.data.ok, true, JSON.stringify(r.data));
+    assert.equal(r.data.subject, 'Script test');
+    assert.match(r.data.to, /bob@example\.com/);
+    assert.match(r.data.from, /Deyao Chen/);
+    assert.match(r.data.html, /<h2 id="h">Hi Bob<\/h2>/);
+    assert.equal(r.data.text.trim(), 'Hi Bob');
+    const missing = await call('POST', '/api/sent/message', { smtp, imap, uid: 99999 });
+    assert.equal(missing.data.ok, false);
+    assert.equal((await call('POST', '/api/sent/message', { smtp, imap })).status, 400);
+  });
+
+  await test('sent: a wrong IMAP password is reported, not thrown', async () => {
+    const r = await call('POST', '/api/sent', { smtp, imap: { ...imap, pass: 'nope' } });
+    assert.equal(r.status, 200);
+    assert.equal(r.data.ok, false);
+    assert.match(r.data.error, /IMAP login failed/);
+  });
+
   console.log(`\n${passed} tests passed`);
 } finally {
   http.close();
   await smtpSrv.close();
+  await imapSrv.close();
 }

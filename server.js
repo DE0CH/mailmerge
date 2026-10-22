@@ -7,6 +7,7 @@ const express = require('express');
 const nodemailer = require('nodemailer');
 const { convert: htmlToText } = require('html-to-text');
 const R = require('./public/render.js');
+const IMAP = require('./imap.js');
 
 const MAX_RECIPIENTS = 5000;
 const MAX_DELAY_MS = 60_000;
@@ -176,15 +177,49 @@ function createApp() {
 
   app.post('/api/verify', async (req, res, next) => {
     try {
-      const smtp = parseSmtp(req.body && req.body.smtp);
+      const body = req.body || {};
+      const smtp = parseSmtp(body.smtp);
+      const imap = body.checkImap ? IMAP.parseImap(body.imap, smtp) : null;
       const transport = makeTransport(smtp);
+      const smtpCheck = transport.verify().then(() => ({ ok: true }), (err) => ({ ok: false, error: errText(err) }));
+      const imapCheck = imap
+        ? IMAP.verifyImap(imap).catch((err) => ({ ok: false, error: IMAP.imapErrText(err) }))
+        : null;
       try {
-        await transport.verify();
-        res.json({ ok: true });
-      } catch (err) {
-        res.json({ ok: false, error: errText(err) });
+        const out = await smtpCheck;
+        if (imapCheck) out.imap = Object.assign(await imapCheck, { host: imap.host, port: imap.port });
+        res.json(out);
       } finally {
         transport.close();
+      }
+    } catch (err) { next(err); }
+  });
+
+  // The Sent tab: the mailbox's Sent folder over IMAP, newest first, with bounces found in INBOX.
+  app.post('/api/sent', async (req, res, next) => {
+    try {
+      const body = req.body || {};
+      const smtp = parseSmtp(body.smtp);
+      const imap = IMAP.parseImap(body.imap, smtp);
+      try {
+        res.json(await IMAP.listSent(imap, { offset: body.offset, limit: body.limit }));
+      } catch (err) {
+        res.json({ ok: false, error: IMAP.imapErrText(err) });
+      }
+    } catch (err) { next(err); }
+  });
+
+  app.post('/api/sent/message', async (req, res, next) => {
+    try {
+      const body = req.body || {};
+      const smtp = parseSmtp(body.smtp);
+      const imap = IMAP.parseImap(body.imap, smtp);
+      const uid = Number(body.uid);
+      if (!Number.isInteger(uid) || uid < 1) throw new BadRequest('A message uid is required.');
+      try {
+        res.json(await IMAP.getSentMessage(imap, uid));
+      } catch (err) {
+        res.json({ ok: false, error: IMAP.imapErrText(err) });
       }
     } catch (err) { next(err); }
   });
@@ -268,7 +303,7 @@ function createApp() {
 
   // eslint-disable-next-line no-unused-vars
   app.use((err, req, res, next) => {
-    if (err instanceof BadRequest) return res.status(400).json({ error: err.message });
+    if (err instanceof BadRequest || err instanceof IMAP.ImapInputError) return res.status(400).json({ error: err.message });
     if (err && err.type === 'entity.too.large') return res.status(413).json({ error: 'Request too large (10 MB max).' });
     if (err && err.type === 'entity.parse.failed') return res.status(400).json({ error: 'Invalid JSON.' });
     console.error(err);

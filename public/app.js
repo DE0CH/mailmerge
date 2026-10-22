@@ -10,6 +10,7 @@
 
   const KEYS = {
     smtp: 'mailmerge.smtp',
+    imap: 'mailmerge.imap',
     template: 'mailmerge.template',
     recipients: 'mailmerge.recipients',
     prefs: 'mailmerge.prefs',
@@ -38,6 +39,7 @@
 
   const state = {
     smtp: Object.assign({}, DEFAULT_SMTP, load(KEYS.smtp, {})),
+    imap: load(KEYS.imap, null), // optional, from the settings key; else derived from smtp on the server
     template: Object.assign({}, DEFAULT_TEMPLATE, load(KEYS.template, {})),
     recipients: (load(KEYS.recipients, []) || []).map(cleanRecipient),
     prefs: Object.assign({}, DEFAULT_PREFS, load(KEYS.prefs, {})),
@@ -55,6 +57,7 @@
   }
 
   const saveSmtp = () => save(KEYS.smtp, state.smtp);
+  const saveImap = () => (state.imap ? save(KEYS.imap, state.imap) : drop(KEYS.imap));
   const saveTemplate = () => save(KEYS.template, state.template);
   const saveRecipients = () => save(KEYS.recipients, state.recipients.map(({ id, name, email, selected }) => ({ id, name, email, selected })));
   const savePrefs = () => save(KEYS.prefs, state.prefs);
@@ -128,102 +131,105 @@
     savePrefs();
     if (name === 'template') updatePreview();
     if (name === 'send') updateSendPanel();
+    if (name === 'sent') openSentTab();
   }
   $$('.tabs button').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab)));
 
-  // ---------- sender (SMTP) ----------
-
-  const form = $('#smtpForm');
-  const DEFAULT_PORTS = { ssl: 465, starttls: 587, none: 25 };
-
-  function fillSmtpForm() {
-    for (const k of Object.keys(DEFAULT_SMTP)) {
-      const el = form.elements[k];
-      if (el) el.value = state.smtp[k] == null ? '' : state.smtp[k];
-    }
-    validateSmtp(false);
-  }
+  // ---------- mail account (set only by the settings key) ----------
 
   function fromLabel() {
-    const n = state.smtp.fromName.trim();
-    const a = state.smtp.fromAddress.trim();
+    const n = String(state.smtp.fromName || '').trim();
+    const a = String(state.smtp.fromAddress || '').trim();
     if (!a) return n || '—';
     return n ? `${n} <${a}>` : a;
   }
 
-  function smtpProblems() {
-    const s = state.smtp;
+  function smtpProblems(s = state.smtp) {
     const p = {};
-    if (!s.host.trim()) p.host = 'Host is required.';
+    if (!String(s.host || '').trim()) p.host = 'the host is missing';
     const port = Number(s.port);
-    if (!Number.isInteger(port) || port < 1 || port > 65535) p.port = 'Port must be 1–65535.';
-    if (!s.fromName.trim()) p.fromName = 'A display name is required, so mail does not arrive as a bare address.';
-    if (!R.isEmail(s.fromAddress)) p.fromAddress = s.fromAddress.trim() ? 'Not a valid email address.' : 'From address is required.';
+    if (!Number.isInteger(port) || port < 1 || port > 65535) p.port = 'the port must be 1–65535';
+    if (!['ssl', 'starttls', 'none'].includes(s.security)) p.security = 'security must be SSL/TLS, STARTTLS or none';
+    if (!String(s.fromName || '').trim()) p.fromName = 'the sender display name is missing';
+    if (!R.isEmail(String(s.fromAddress || '').trim())) p.fromAddress = 'the From address is missing or not valid';
     return p;
   }
 
-  function validateSmtp(showAll) {
-    const p = smtpProblems();
-    for (const k of ['fromName', 'fromAddress']) {
-      const el = form.elements[k];
-      const show = p[k] && (showAll || el.dataset.touched);
-      el.closest('.field').classList.toggle('invalid', !!show);
-      $(`[data-err="${k}"]`).textContent = show ? p[k] : '';
-    }
-    $('#fromPreview').textContent = fromLabel();
-    return p;
+  // null when the account is usable, else what is wrong in plain words
+  function accountProblem() {
+    const s = state.smtp;
+    if (!String(s.host || '').trim() && !String(s.fromAddress || '').trim()) return 'No mail account: import a settings key first.';
+    const first = Object.values(smtpProblems())[0];
+    return first ? `The mail account is incomplete (${first}). Import a new settings key.` : null;
   }
 
-  form.addEventListener('input', (e) => {
-    const el = e.target;
-    if (!el.name) return;
-    if (el.name === 'port') state.smtp.port = el.value === '' ? '' : Number(el.value);
-    else state.smtp[el.name] = el.value;
-    if (el.name === 'security') {
-      const cur = Number(state.smtp.port);
-      if (!cur || Object.values(DEFAULT_PORTS).includes(cur)) {
-        state.smtp.port = DEFAULT_PORTS[el.value];
-        form.elements.port.value = state.smtp.port;
-      }
+  const SEC = { ssl: 'SSL/TLS', starttls: 'STARTTLS', none: 'no encryption' };
+
+  // what the server uses for IMAP when the key has no `imap` (the same rule as imap.js)
+  function imapView() {
+    if (state.imap && String(state.imap.host || '').trim()) {
+      const sec = state.imap.security || 'ssl';
+      return { host: state.imap.host, port: state.imap.port || (sec === 'ssl' ? 993 : 143), security: sec };
     }
-    saveSmtp();
-    validateSmtp(false);
+    const h = String(state.smtp.host || '');
+    return { host: /^smtp\./i.test(h) ? 'imap.' + h.slice(5) : h, port: 993, security: 'ssl' };
+  }
+
+  function renderAccount() {
+    const problem = accountProblem();
+    $('#accountNone').hidden = !problem;
+    $('#accountSet').hidden = !!problem;
     $('#verifyStatus').textContent = '';
-    updatePreviewMeta();
-  });
-  form.addEventListener('change', (e) => {
-    if (e.target.name) { e.target.dataset.touched = '1'; validateSmtp(false); }
-  });
-  form.addEventListener('submit', (e) => e.preventDefault());
+    $('#verifyImapStatus').textContent = '';
+    if (problem) {
+      $('#accountNone .note').textContent = problem.startsWith('No mail account')
+        ? 'No mail account yet. The mail account is set only by importing the settings key you were given. Sending is off until then.'
+        : problem + ' Sending is off until then.';
+      return;
+    }
+    const s = state.smtp;
+    const im = imapView();
+    $('#acFrom').textContent = fromLabel();
+    $('#acSmtp').textContent = `${s.host}:${s.port} (${SEC[s.security] || s.security})`;
+    $('#acImap').textContent = `${im.host}:${im.port} (${SEC[im.security] || im.security})`;
+    $('#acUser').textContent = s.user || '—';
+  }
 
-  $('#pwToggle').addEventListener('click', () => {
-    const el = form.elements.pass;
-    const show = el.type === 'password';
-    el.type = show ? 'text' : 'password';
-    $('#pwToggle').textContent = show ? 'Hide' : 'Show';
+  $('#goImport').addEventListener('click', () => {
+    showTab('sync');
+    $('#importText').focus();
   });
 
   function smtpPayload() {
     const s = state.smtp;
     return {
-      host: s.host.trim(), port: Number(s.port), security: s.security,
-      user: s.user.trim(), pass: s.pass, fromAddress: s.fromAddress.trim(), fromName: s.fromName.trim(),
+      host: String(s.host || '').trim(), port: Number(s.port), security: s.security,
+      user: String(s.user || '').trim(), pass: String(s.pass || ''),
+      fromAddress: String(s.fromAddress || '').trim(), fromName: String(s.fromName || '').trim(),
     };
+  }
+  function imapPayload() {
+    return state.imap ? Object.assign({}, state.imap) : undefined;
   }
 
   $('#verifyBtn').addEventListener('click', async () => {
-    const p = validateSmtp(true);
     const st = $('#verifyStatus');
-    const first = Object.values(p)[0];
-    if (first) { st.className = 'status-line err'; st.textContent = first; return; }
+    const st2 = $('#verifyImapStatus');
+    const problem = accountProblem();
+    st2.textContent = '';
+    if (problem) { st.className = 'status-line err'; st.textContent = problem; return; }
     const btn = $('#verifyBtn');
     btn.disabled = true;
     st.className = 'status-line';
     st.textContent = 'Connecting…';
     try {
-      const r = await api('POST', '/api/verify', { smtp: smtpPayload() });
-      if (r.ok) { st.className = 'status-line ok'; st.textContent = 'Connected and logged in.'; }
-      else { st.className = 'status-line err'; st.textContent = r.error || 'Connection failed.'; }
+      const r = await api('POST', '/api/verify', { smtp: smtpPayload(), imap: imapPayload(), checkImap: true });
+      if (r.ok) { st.className = 'status-line ok'; st.textContent = 'Sending (SMTP): connected and logged in.'; }
+      else { st.className = 'status-line err'; st.textContent = 'Sending (SMTP): ' + (r.error || 'connection failed.'); }
+      if (r.imap) {
+        if (r.imap.ok) { st2.className = 'status-line ok'; st2.textContent = `Sent folder (IMAP): connected, found “${r.imap.folder}”.`; }
+        else { st2.className = 'status-line err'; st2.textContent = 'Sent folder (IMAP): ' + (r.imap.error || 'connection failed.'); }
+      }
     } catch (err) {
       st.className = 'status-line err';
       st.textContent = err.message;
@@ -711,9 +717,8 @@
 
   function readiness() {
     const items = [];
-    const p = smtpProblems();
-    const smtpOk = !Object.keys(p).length;
-    items.push({ ok: smtpOk, text: smtpOk ? `From ${fromLabel()} via ${state.smtp.host}` : 'Sender settings incomplete: ' + Object.values(p)[0] });
+    const problem = accountProblem();
+    items.push({ ok: !problem, text: problem ? problem : `From ${fromLabel()} via ${state.smtp.host}` });
     const subjOk = !!state.template.subject.trim();
     const bodyOk = !!state.template.html.trim();
     items.push({ ok: subjOk && bodyOk, text: subjOk && bodyOk ? `Subject: ${state.template.subject}` : (!subjOk ? 'The subject is empty.' : 'The body is empty.') });
@@ -867,9 +872,8 @@
 
   $('#testBtn').addEventListener('click', async () => {
     const st = $('#testStatus');
-    const p = smtpProblems();
     const to = $('#testTo').value.trim();
-    let problem = Object.values(p)[0];
+    let problem = accountProblem();
     if (!problem && !state.template.subject.trim()) problem = 'The subject is empty.';
     if (!problem && !state.template.html.trim()) problem = 'The body is empty.';
     if (!problem && !R.isEmail(to)) problem = 'Type a valid address to send the test to.';
@@ -917,6 +921,7 @@
       v: 1,
       exportedAt: new Date().toISOString(),
       smtp: smtpPayload(),
+      imap: imapPayload(),
       template: { subject: state.template.subject, html: state.template.html },
       recipients: state.recipients.map(({ name, email, selected }) => ({ name, email, selected })),
       prefs: { delayMs: state.prefs.delayMs, testTo: state.prefs.testTo },
@@ -949,34 +954,275 @@
       toast('That is not a valid settings key: ' + err.message, 'err');
       return;
     }
-    const n = Array.isArray(data.recipients) ? data.recipients.length : 0;
+    // Only what the key holds replaces what is here; a key without a mail account keeps the current one.
+    const hasSmtp = !!(data.smtp && typeof data.smtp === 'object' &&
+      (String(data.smtp.host || '').trim() || String(data.smtp.fromAddress || '').trim()));
+    const hasTemplate = !!(data.template && typeof data.template === 'object');
+    const hasRecipients = Array.isArray(data.recipients);
+    let newSmtp = null;
+    let newImap = null;
+    if (hasSmtp) {
+      newSmtp = Object.assign({}, DEFAULT_SMTP, data.smtp);
+      const bad = Object.values(smtpProblems(newSmtp))[0];
+      if (bad) { toast(`That key holds an incomplete mail account: ${bad}.`, 'err'); return; }
+      if (data.imap && typeof data.imap === 'object' && String(data.imap.host || '').trim()) {
+        newImap = {};
+        for (const k of ['host', 'port', 'security', 'user', 'pass']) {
+          if (data.imap[k] != null && data.imap[k] !== '') newImap[k] = k === 'port' ? Number(data.imap[k]) : String(data.imap[k]);
+        }
+      }
+    }
+    if (!hasSmtp && !hasTemplate && !hasRecipients) { toast('That key holds no mail account, template or recipients.', 'err'); return; }
+    const n = hasRecipients ? data.recipients.length : 0;
+    const lines = [];
+    lines.push(hasSmtp
+      ? `Mail account: ${newSmtp.fromName} <${newSmtp.fromAddress}> via ${newSmtp.host}`
+      : 'Mail account: not in this key, the current one is kept.');
+    if (hasTemplate) lines.push(`Template subject: ${data.template.subject || '—'}`);
+    if (hasRecipients) lines.push(`${n} recipient${n === 1 ? '' : 's'}`);
+    lines.push('These replace what is saved in this browser.');
     const ok = await ask({
-      title: 'Replace all settings here?',
-      body: [
-        `SMTP: ${(data.smtp && data.smtp.host) || '—'}, sender ${(data.smtp && data.smtp.fromName) || '—'} <${(data.smtp && data.smtp.fromAddress) || '—'}>`,
-        `Template subject: ${(data.template && data.template.subject) || '—'}`,
-        `${n} recipient${n === 1 ? '' : 's'}`,
-        'Everything currently saved in this browser is overwritten.',
-      ],
+      title: 'Import this settings key?',
+      body: lines,
       actions: [{ label: 'Keep current', value: false }, { label: 'Replace', value: true, kind: 'primary' }],
     });
     if (!ok) return;
-    state.smtp = Object.assign({}, DEFAULT_SMTP, data.smtp || {});
-    state.template = { subject: String((data.template || {}).subject || ''), html: String((data.template || {}).html || '') };
-    state.recipients = (data.recipients || []).map(cleanRecipient);
+    if (hasSmtp) {
+      state.smtp = newSmtp;
+      state.imap = newImap;
+      saveSmtp();
+      saveImap();
+      resetSent();
+    }
+    if (hasTemplate) {
+      state.template = { subject: String(data.template.subject || ''), html: String(data.template.html || '') };
+      saveTemplate();
+    }
+    if (hasRecipients) {
+      state.recipients = data.recipients.map(cleanRecipient);
+      state.status = {};
+      saveRecipients();
+    }
     state.prefs = Object.assign({}, state.prefs, (data.prefs && typeof data.prefs === 'object') ? data.prefs : {});
-    state.status = {};
-    saveSmtp(); saveTemplate(); saveRecipients(); savePrefs();
+    savePrefs();
     $('#importText').value = '';
     $('#testTo').value = state.prefs.testTo || '';
     initFromState();
     toast('Settings imported.', 'ok');
   });
 
+  // ---------- sent folder (IMAP) ----------
+
+  const sent = { items: [], total: 0, folder: '', hasMore: false, loading: false, loaded: false, openUid: null, gen: 0 };
+
+  function resetSent() {
+    Object.assign(sent, { items: [], total: 0, folder: '', hasMore: false, loaded: false, gen: sent.gen + 1 });
+    $('#sentList').innerHTML = '';
+    $('#sentMoreWrap').hidden = true;
+    $('#sentEmpty').hidden = true;
+    closeSentView();
+  }
+
+  function fmtDate(iso) {
+    const d = new Date(iso);
+    if (isNaN(d)) return '';
+    const sameYear = d.getFullYear() === new Date().getFullYear();
+    return d.toLocaleString(undefined, { year: sameYear ? undefined : 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  }
+  function addrText(list) {
+    return (list || []).map((a) => (a.name ? `${a.name} <${a.address}>` : a.address)).join(', ') || '(no recipient)';
+  }
+
+  function openSentTab() {
+    const problem = accountProblem();
+    if (problem) {
+      const banner = $('#sentBanner');
+      banner.innerHTML = '';
+      const d = document.createElement('div');
+      d.className = 'note warn';
+      d.textContent = problem;
+      banner.appendChild(d);
+      return;
+    }
+    if (!sent.loaded && !sent.loading) loadSent(false);
+  }
+
+  async function loadSent(more) {
+    if (sent.loading) return;
+    sent.loading = true;
+    const gen = sent.gen;
+    const banner = $('#sentBanner');
+    banner.innerHTML = '';
+    const moreBtn = $('#sentMore');
+    const refresh = $('#sentRefresh');
+    refresh.disabled = true;
+    moreBtn.disabled = true;
+    if (!more) {
+      $('#sentList').innerHTML = '<p class="muted loading">Loading the Sent folder…</p>';
+      $('#sentEmpty').hidden = true;
+      $('#sentMoreWrap').hidden = true;
+    } else moreBtn.textContent = 'Loading…';
+    try {
+      const r = await api('POST', '/api/sent', { smtp: smtpPayload(), imap: imapPayload(), offset: more ? sent.items.length : 0, limit: 50 });
+      if (gen !== sent.gen) return; // the account changed meanwhile
+      if (!r.ok) throw new Error(r.error || 'Could not read the Sent folder.');
+      if (!more) sent.items = [];
+      const seen = new Set(sent.items.map((x) => x.uid));
+      for (const it of r.items) if (!seen.has(it.uid)) sent.items.push(it);
+      Object.assign(sent, { total: r.total, folder: r.folder, hasMore: r.hasMore, loaded: true });
+      renderSent();
+    } catch (err) {
+      if (gen !== sent.gen) return;
+      if (!more) $('#sentList').innerHTML = '';
+      const d = document.createElement('div');
+      d.className = 'note err';
+      d.textContent = err.message;
+      banner.appendChild(d);
+    } finally {
+      sent.loading = false;
+      refresh.disabled = false;
+      moreBtn.disabled = false;
+      moreBtn.textContent = 'Load more';
+    }
+  }
+
+  function bounceText(b) {
+    return [b.address, b.reason].filter(Boolean).join(' — ');
+  }
+
+  function renderSent() {
+    const list = $('#sentList');
+    list.innerHTML = '';
+    const bounced = sent.items.filter((x) => x.status === 'bounced').length;
+    $('#sentInfo').textContent = `Folder “${sent.folder}”: ${sent.items.length} of ${sent.total} shown, newest first` +
+      (bounced ? `, ${bounced} bounced` : '') + '. Includes mail sent outside this app. Bounces are looked up in the inbox.';
+    for (const it of sent.items) {
+      const row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'sent-row' + (it.uid === sent.openUid ? ' open' : '') + (it.status === 'bounced' ? ' bounced' : '');
+      row.dataset.uid = it.uid;
+      const top = document.createElement('div');
+      top.className = 'sr-top';
+      const to = document.createElement('span');
+      to.className = 'sr-to';
+      to.textContent = addrText(it.to);
+      const date = document.createElement('span');
+      date.className = 'sr-date';
+      date.textContent = fmtDate(it.date);
+      top.append(to, date);
+      const subj = document.createElement('div');
+      subj.className = 'sr-subject';
+      subj.textContent = it.subject || '(no subject)';
+      const st = document.createElement('div');
+      st.className = 'sr-status';
+      const b = document.createElement('span');
+      b.className = 'badge ' + (it.status === 'bounced' ? 'failed' : 'notbounced');
+      b.textContent = it.status === 'bounced' ? 'Bounced' : 'Not bounced';
+      st.appendChild(b);
+      for (const x of it.bounces || []) {
+        const e = document.createElement('span');
+        e.className = 'r-error';
+        e.textContent = bounceText(x);
+        st.appendChild(e);
+      }
+      row.append(top, subj, st);
+      list.appendChild(row);
+    }
+    $('#sentEmpty').hidden = sent.items.length > 0;
+    $('#sentMoreWrap').hidden = !sent.hasMore;
+  }
+
+  $('#sentRefresh').addEventListener('click', () => {
+    if (accountProblem()) { openSentTab(); return; }
+    closeSentView();
+    loadSent(false);
+  });
+  $('#sentMore').addEventListener('click', () => loadSent(true));
+  $('#sentList').addEventListener('click', (e) => {
+    const row = e.target.closest('.sent-row');
+    if (row) openSentMessage(Number(row.dataset.uid));
+  });
+
+  const sentFrame = $('#sentFrame');
+  function closeSentView() {
+    sent.openUid = null;
+    $('#sentView').hidden = true;
+    $('#tab-sent').classList.remove('viewing');
+    sentFrame.srcdoc = '';
+    $$('.sent-row.open').forEach((r) => r.classList.remove('open'));
+  }
+  $('#sentBack').addEventListener('click', () => {
+    const uid = sent.openUid;
+    closeSentView();
+    const row = $(`.sent-row[data-uid="${uid}"]`);
+    if (row) row.scrollIntoView({ block: 'center' });
+  });
+
+  // The message shows in an iframe that runs no scripts: sandbox without allow-scripts, plus a CSP.
+  // (allow-same-origin without allow-scripts only lets this page size the frame; the message can't run code.)
+  sentFrame.addEventListener('load', () => {
+    try {
+      const h = sentFrame.contentDocument.documentElement.scrollHeight;
+      sentFrame.style.height = Math.max(240, Math.min(h + 4, 4000)) + 'px';
+    } catch (e) { /* ignore */ }
+  });
+  function messageDoc(html) {
+    const head = '<meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="script-src \'none\'; object-src \'none\'; frame-src \'none\'">' +
+      '<base target="_blank"><style>body{font:15px/1.5 Arial,Helvetica,sans-serif;color:#1f2328;margin:12px;overflow-wrap:anywhere}img{max-width:100%;height:auto}pre{white-space:pre-wrap;font:inherit}</style>';
+    if (/<head[\s>]/i.test(html)) return html.replace(/<head([^>]*)>/i, `<head$1>${head}`);
+    if (/<html[\s>]/i.test(html)) return html.replace(/<html([^>]*)>/i, `<html$1><head>${head}</head>`);
+    return `<!doctype html><html><head>${head}</head><body>${html}</body></html>`;
+  }
+  function escapeHtml(t) {
+    return String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+
+  async function openSentMessage(uid) {
+    const it = sent.items.find((x) => x.uid === uid);
+    if (!it) return;
+    sent.openUid = uid;
+    $$('.sent-row').forEach((r) => r.classList.toggle('open', Number(r.dataset.uid) === uid));
+    $('#tab-sent').classList.add('viewing');
+    $('#sentView').hidden = false;
+    $('#svSubject').textContent = it.subject || '(no subject)';
+    $('#svFrom').textContent = fromLabel();
+    $('#svTo').textContent = addrText(it.to);
+    $('#svCc').textContent = addrText(it.cc);
+    $('#svCcRow').hidden = !(it.cc && it.cc.length);
+    $('#svDate').textContent = fmtDate(it.date);
+    const bb = $('#svBounce');
+    bb.innerHTML = '';
+    const note = document.createElement('div');
+    note.className = 'note ' + (it.status === 'bounced' ? 'err' : 'ok');
+    note.textContent = it.status === 'bounced'
+      ? 'Bounced: ' + it.bounces.map(bounceText).join('; ')
+      : 'Not bounced: there is no bounce for this message in the inbox.';
+    bb.appendChild(note);
+    $('#svAttach').hidden = true;
+    sentFrame.srcdoc = messageDoc('<p style="color:#5b6470">Loading…</p>');
+    if (window.matchMedia('(max-width: 899px)').matches) window.scrollTo(0, 0);
+    try {
+      const m = await api('POST', '/api/sent/message', { smtp: smtpPayload(), imap: imapPayload(), uid });
+      if (sent.openUid !== uid) return;
+      if (!m.ok) throw new Error(m.error || 'Could not open the message.');
+      $('#svFrom').textContent = m.from || fromLabel();
+      if (m.to) $('#svTo').textContent = m.to;
+      if (m.cc) { $('#svCc').textContent = m.cc; $('#svCcRow').hidden = false; }
+      sentFrame.srcdoc = messageDoc(m.html || `<pre>${escapeHtml(m.text || '')}</pre>`);
+      if (m.attachments && m.attachments.length) {
+        $('#svAttach').textContent = 'Attachments: ' + m.attachments.map((a) => `${a.filename} (${Math.max(1, Math.round(a.size / 1024))} KB)`).join(', ');
+        $('#svAttach').hidden = false;
+      }
+    } catch (err) {
+      if (sent.openUid !== uid) return;
+      sentFrame.srcdoc = messageDoc(`<p style="color:#b42318">${escapeHtml(err.message)}</p>`);
+    }
+  }
+
   // ---------- boot ----------
 
   function initFromState() {
-    fillSmtpForm();
+    renderAccount();
     subjectEl.value = state.template.subject;
     loadEditor();
     renderList();
