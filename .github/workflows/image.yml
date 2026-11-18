@@ -1,8 +1,7 @@
 name: image
 
 on:
-  push:
-    branches: [main]
+  push:  # every branch (the gate merges a branch when this is green); main alone pushes the image
   workflow_dispatch:
 
 permissions:
@@ -37,7 +36,7 @@ jobs:
       - uses: docker/build-push-action@v6
         with:
           context: .
-          push: true
+          push: ${{ github.ref == 'refs/heads/main' }}
           tags: |
             ghcr.io/de0ch/mailmerge:latest
             ghcr.io/de0ch/mailmerge:sha-${{ steps.sha.outputs.short }}
